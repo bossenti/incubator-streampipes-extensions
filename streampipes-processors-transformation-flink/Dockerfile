@@ -13,13 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG BASE_IMAGE=adoptopenjdk/openjdk8-openj9:alpine-slim
+ARG BASE_IMAGE=adoptopenjdk/openjdk8-openj9:alpine
 FROM $BASE_IMAGE
 
 ENV CONSUL_LOCATION consul
 
 EXPOSE 8090
 
-COPY target/streampipes-processors-transformation-flink.jar  /streampipes-processors-transformation-flink.jar
+COPY target/streampipes-processors-transformation-flink.jar  /streampipes-processing-element-container.jar
 
-ENTRYPOINT ["java", "-jar", "/streampipes-processors-transformation-flink.jar"]
+ENTRYPOINT ["java", "-jar", "/streampipes-processing-element-container.jar"]

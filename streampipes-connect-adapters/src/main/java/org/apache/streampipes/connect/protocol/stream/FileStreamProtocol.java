@@ -18,10 +18,7 @@
 
 package org.apache.streampipes.connect.protocol.stream;
 
-import org.apache.streampipes.sdk.helpers.Locales;
-import org.apache.streampipes.sdk.utils.Assets;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.http.client.fluent.Request;
 import org.apache.streampipes.connect.SendToPipeline;
 import org.apache.streampipes.connect.adapter.exception.ParseException;
 import org.apache.streampipes.connect.adapter.guess.SchemaGuesser;
@@ -29,21 +26,25 @@ import org.apache.streampipes.connect.adapter.model.generic.Format;
 import org.apache.streampipes.connect.adapter.model.generic.Parser;
 import org.apache.streampipes.connect.adapter.model.generic.Protocol;
 import org.apache.streampipes.connect.adapter.model.pipeline.AdapterPipeline;
-import org.apache.streampipes.connect.adapter.preprocessing.elements.SendToKafkaAdapterSink;
-import org.apache.streampipes.connect.adapter.preprocessing.elements.SendToKafkaReplayAdapterSink;
-import org.apache.streampipes.connect.adapter.sdk.ParameterExtractor;
+import org.apache.streampipes.connect.adapter.preprocessing.elements.*;
 import org.apache.streampipes.model.AdapterType;
 import org.apache.streampipes.model.connect.grounding.ProtocolDescription;
 import org.apache.streampipes.model.connect.guess.GuessSchema;
+import org.apache.streampipes.model.grounding.MqttTransportProtocol;
 import org.apache.streampipes.model.schema.*;
-import org.apache.streampipes.model.staticproperty.FileStaticProperty;
 import org.apache.streampipes.sdk.builder.adapter.ProtocolDescriptionBuilder;
-import org.apache.streampipes.sdk.helpers.AdapterSourceType;
-import org.apache.streampipes.sdk.helpers.Labels;
-import org.apache.streampipes.sdk.helpers.Options;
+import org.apache.streampipes.sdk.extractor.StaticPropertyExtractor;
+import org.apache.streampipes.sdk.helpers.*;
+import org.apache.streampipes.sdk.utils.Assets;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.io.*;
-import java.util.*;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
 
 public class FileStreamProtocol extends Protocol {
 
@@ -51,7 +52,8 @@ public class FileStreamProtocol extends Protocol {
 
   public static final String ID = "org.apache.streampipes.connect.protocol.stream.file";
 
-  private String filePath;
+  //private String filePath;
+  private String fileFetchUrl;
  // private String timestampKey;
   private boolean replaceTimestamp;
   private float speedUp;
@@ -64,10 +66,10 @@ public class FileStreamProtocol extends Protocol {
   public FileStreamProtocol() {
   }
 
-  public FileStreamProtocol(Parser parser, Format format, String filePath,
+  public FileStreamProtocol(Parser parser, Format format, String fileFetchUrl,
                             boolean replaceTimestamp, float speedUp, int timeBetweenReplay) {
     super(parser, format);
-    this.filePath = filePath;
+    this.fileFetchUrl = fileFetchUrl;
     this.replaceTimestamp = replaceTimestamp;
     this.speedUp = speedUp;
     this.timeBetweenReplay = timeBetweenReplay;
@@ -76,22 +78,42 @@ public class FileStreamProtocol extends Protocol {
   @Override
   public void run(AdapterPipeline adapterPipeline) {
     String timestampKey = getTimestampKey(eventSchema.getEventProperties(), "");
-    SendToKafkaAdapterSink adapterPipelineSink = (SendToKafkaAdapterSink) adapterPipeline.getPipelineSink();
+
+    // exchange adapter pipeline sink with special purpose replay sink for file replay
+    if (adapterPipeline.getPipelineSink() instanceof SendToKafkaAdapterSink) {
+        adapterPipeline.changePipelineSink(new SendToBrokerReplayAdapterSink(
+                (SendToKafkaAdapterSink) adapterPipeline.getPipelineSink(),
+                timestampKey,
+                replaceTimestamp,
+                speedUp));
+
+    } else if (adapterPipeline.getPipelineSink() instanceof SendToMqttAdapterSink) {
+        adapterPipeline.changePipelineSink(new SendToBrokerReplayAdapterSink(
+                (SendToMqttAdapterSink) adapterPipeline.getPipelineSink(),
+                timestampKey,
+                replaceTimestamp,
+                speedUp));
+
+    } else if (adapterPipeline.getPipelineSink() instanceof SendToJmsAdapterSink) {
+        adapterPipeline.changePipelineSink(new SendToBrokerReplayAdapterSink(
+                (SendToJmsAdapterSink) adapterPipeline.getPipelineSink(),
+                timestampKey,
+                replaceTimestamp,
+                speedUp));
+    }
 
     running = true;
-
     task = new Thread() {
         @Override
         public void run() {
           while (running) {
-            adapterPipeline.changePipelineSink(new SendToKafkaReplayAdapterSink(adapterPipelineSink, timestampKey,
-                    replaceTimestamp, speedUp));
+
             format.reset();
             SendToPipeline stk = new SendToPipeline(format, adapterPipeline);
-            InputStream data = getDataFromEndpoint();
+            InputStream dataInputStream = getDataFromEndpoint();
             try {
-              if(data != null) {
-                parser.parse(data, stk);
+              if(dataInputStream != null) {
+                parser.parse(dataInputStream, stk);
               } else {
                 logger.warn("Could not read data from file.");
               }
@@ -116,43 +138,28 @@ public class FileStreamProtocol extends Protocol {
     running = false;
   }
 
-  InputStream getDataFromEndpoint() throws ParseException {
-    FileReader fr = null;
-    InputStream inn = null;
+  private InputStream getDataFromEndpoint() throws ParseException {
     try {
-
-      fr = new FileReader(filePath);
-      BufferedReader br = new BufferedReader(fr);
-
-      inn = new FileInputStream(filePath);
-
-    } catch (FileNotFoundException e) {
-        throw new ParseException("Could not find file: " + filePath);
+      return Request.Get(fileFetchUrl).execute().returnContent().asStream();
+    } catch (IOException e) {
+      throw new ParseException("Could not find file: " + fileFetchUrl);
     }
-
-    if (inn == null)
-        throw new ParseException("Could not receive Data from file: " + filePath);
-
-
-    return inn;
   }
 
   @Override
   public Protocol getInstance(ProtocolDescription protocolDescription, Parser parser, Format format) {
-    ParameterExtractor extractor = new ParameterExtractor(protocolDescription.getConfig());
+    StaticPropertyExtractor extractor = StaticPropertyExtractor.from(protocolDescription.getConfig(), new ArrayList<>());
 
-    List<String> replaceTimestampStringList = extractor.selectedMultiValues("replaceTimestamp");
+    List<String> replaceTimestampStringList = extractor.selectedMultiValues("replaceTimestamp", String.class);
 //    String replaceTimestampString = extractor.selectedSingleValueOption("replaceTimestamp");
     boolean replaceTimestamp = replaceTimestampStringList.size() == 0 ? false : true;
 
-    float speedUp = Float.parseFloat(extractor.singleValue("speed"));
+    float speedUp = extractor.singleValueParameter("speed", Float.class);
 
     int timeBetweenReplay = 1;
 
-    FileStaticProperty fileStaticProperty = (FileStaticProperty) extractor.getStaticPropertyByName("filePath");
-
-    String fileUri = fileStaticProperty.getLocationPath();
-    return new FileStreamProtocol(parser, format, fileUri, replaceTimestamp, speedUp, timeBetweenReplay);
+    String fileFetchUrl = extractor.selectedFileFetchUrl("filePath");
+    return new FileStreamProtocol(parser, format, fileFetchUrl, replaceTimestamp, speedUp, timeBetweenReplay);
   }
 
   private String getTimestampKey(List<EventProperty> eventProperties, String prefixKey) {
@@ -185,7 +192,7 @@ public class FileStreamProtocol extends Protocol {
             .withLocales(Locales.EN)
             .sourceType(AdapterSourceType.STREAM)
             .category(AdapterType.Generic)
-            .requiredFile(Labels.withId("filePath"))
+            .requiredFile(Labels.withId("filePath"), Filetypes.CSV, Filetypes.JSON, Filetypes.XML)
 //            .requiredSingleValueSelection(Labels.withId("replaceTimestamp"),
 //                Options.from("True", "False"))
             .requiredMultiValueSelection(Labels.withId("replaceTimestamp"),

@@ -26,6 +26,7 @@ import org.apache.streampipes.dataformat.json.JsonDataFormatFactory;
 import org.apache.streampipes.dataformat.smile.SmileDataFormatFactory;
 import org.apache.streampipes.messaging.jms.SpJmsProtocolFactory;
 import org.apache.streampipes.messaging.kafka.SpKafkaProtocolFactory;
+import org.apache.streampipes.messaging.mqtt.SpMqttProtocolFactory;
 import org.apache.streampipes.processors.transformation.jvm.config.TransformationJvmConfig;
 import org.apache.streampipes.processors.transformation.jvm.processor.array.count.CountArrayController;
 import org.apache.streampipes.processors.transformation.jvm.processor.array.split.SplitArrayController;
@@ -40,6 +41,7 @@ import org.apache.streampipes.processors.transformation.jvm.processor.state.buff
 import org.apache.streampipes.processors.transformation.jvm.processor.state.labeler.buffer.StateBufferLabelerController;
 import org.apache.streampipes.processors.transformation.jvm.processor.state.labeler.number.NumberLabelerController;
 import org.apache.streampipes.processors.transformation.jvm.processor.stringoperator.counter.StringCounterController;
+import org.apache.streampipes.processors.transformation.jvm.processor.stringoperator.state.StringToStateController;
 import org.apache.streampipes.processors.transformation.jvm.processor.stringoperator.timer.StringTimerController;
 import org.apache.streampipes.processors.transformation.jvm.processor.task.TaskDurationController;
 import org.apache.streampipes.processors.transformation.jvm.processor.timestampextractor.TimestampExtractorController;
@@ -50,8 +52,7 @@ import org.apache.streampipes.processors.transformation.jvm.processor.value.dura
 public class TransformationJvmInit extends StandaloneModelSubmitter {
 
   public static void main(String[] args) {
-    DeclarersSingleton
-            .getInstance()
+    DeclarersSingleton.getInstance()
             .add(new CountArrayController())
             .add(new SplitArrayController())
             .add(new CalculateDurationController())
@@ -71,14 +72,18 @@ public class TransformationJvmInit extends StandaloneModelSubmitter {
             .add(new StateBufferController())
             .add(new StateBufferLabelerController())
             .add(new NumberLabelerController())
+            .add(new StringToStateController())
             .add(new StringCounterController());
 
-    DeclarersSingleton.getInstance().registerDataFormats(new JsonDataFormatFactory(),
+    DeclarersSingleton.getInstance().registerDataFormats(
+            new JsonDataFormatFactory(),
             new CborDataFormatFactory(),
             new SmileDataFormatFactory(),
             new FstDataFormatFactory());
 
-    DeclarersSingleton.getInstance().registerProtocols(new SpKafkaProtocolFactory(),
+    DeclarersSingleton.getInstance().registerProtocols(
+            new SpKafkaProtocolFactory(),
+            new SpMqttProtocolFactory(),
             new SpJmsProtocolFactory());
 
     new TransformationJvmInit().init(TransformationJvmConfig.INSTANCE);

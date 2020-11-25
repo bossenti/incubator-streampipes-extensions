@@ -25,6 +25,7 @@ import org.apache.streampipes.dataformat.json.JsonDataFormatFactory;
 import org.apache.streampipes.dataformat.smile.SmileDataFormatFactory;
 import org.apache.streampipes.messaging.jms.SpJmsProtocolFactory;
 import org.apache.streampipes.messaging.kafka.SpKafkaProtocolFactory;
+import org.apache.streampipes.messaging.mqtt.SpMqttProtocolFactory;
 import org.apache.streampipes.pe.jvm.config.AllPipelineElementsConfig;
 import org.apache.streampipes.processors.enricher.jvm.processor.jseval.JSEvalController;
 import org.apache.streampipes.processors.enricher.jvm.processor.sizemeasure.SizeMeasureController;
@@ -72,6 +73,7 @@ import org.apache.streampipes.processors.transformation.jvm.processor.state.buff
 import org.apache.streampipes.processors.transformation.jvm.processor.state.labeler.buffer.StateBufferLabelerController;
 import org.apache.streampipes.processors.transformation.jvm.processor.state.labeler.number.NumberLabelerController;
 import org.apache.streampipes.processors.transformation.jvm.processor.stringoperator.counter.StringCounterController;
+import org.apache.streampipes.processors.transformation.jvm.processor.stringoperator.state.StringToStateController;
 import org.apache.streampipes.processors.transformation.jvm.processor.stringoperator.timer.StringTimerController;
 import org.apache.streampipes.processors.transformation.jvm.processor.task.TaskDurationController;
 import org.apache.streampipes.processors.transformation.jvm.processor.timestampextractor.TimestampExtractorController;
@@ -157,6 +159,7 @@ public class AllPipelineElementsInit extends StandaloneModelSubmitter {
             .add(new BooleanTimerController())
             .add(new StateBufferController())
             .add(new StateBufferLabelerController())
+            .add(new StringToStateController())
             .add(new SignalEdgeFilterController())
             .add(new BooleanToStateController())
             .add(new CsvMetadataEnrichmentController())
@@ -191,17 +194,17 @@ public class AllPipelineElementsInit extends StandaloneModelSubmitter {
             .add(new EmailController())
             .add(new TelegramController())
             .add(new OneSignalController())
-            .add(new SlackNotificationController())
+            .add(new SlackNotificationController());
 
-    ;
-
-
-    DeclarersSingleton.getInstance().registerDataFormats(new JsonDataFormatFactory(),
+    DeclarersSingleton.getInstance().registerDataFormats(
+            new JsonDataFormatFactory(),
             new CborDataFormatFactory(),
             new SmileDataFormatFactory(),
             new FstDataFormatFactory());
 
-    DeclarersSingleton.getInstance().registerProtocols(new SpKafkaProtocolFactory(),
+    DeclarersSingleton.getInstance().registerProtocols(
+            new SpKafkaProtocolFactory(),
+            new SpMqttProtocolFactory(),
             new SpJmsProtocolFactory());
 
     new AllPipelineElementsInit().init(AllPipelineElementsConfig.INSTANCE);
